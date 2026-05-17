@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<title>Ghost Brawl &mdash; Showdown</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ============ MENU / BRAWLER PICK ============ -->
+<div id="menu" class="screen">
+  <div class="logo">
+    <h1>GHOST <span>BRAWL</span></h1>
+    <p class="tag">Showdown &mdash; last brawler standing wins</p>
+  </div>
+
+  <h2 class="pick-title">PICK YOUR BRAWLER</h2>
+  <div id="brawler-cards" class="cards"></div>
+
+  <div class="how">
+    <div><b>WASD</b> move</div>
+    <div><b>Mouse</b> aim</div>
+    <div><b>Left&nbsp;Click</b> shoot</div>
+    <div><b>Space / Right&nbsp;Click</b> super</div>
+    <div><b>Bushes</b> hide you</div>
+    <div><b>Storm</b> shrinks the map</div>
+  </div>
+
+  <button id="play-btn" class="big-btn" disabled>SELECT A BRAWLER</button>
+</div>
+
+<!-- ============ GAME ============ -->
+<div id="game-wrap" class="hidden">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-left">
+      <div id="brawler-portrait" class="portrait"></div>
+      <div class="bars">
+        <div class="hp-bar"><div id="hp-fill"></div><span id="hp-text">100/100</span></div>
+        <div class="super-bar"><div id="super-fill"></div><span id="super-text">SUPER</span></div>
+      </div>
+    </div>
+    <div class="hud-center">
+      <div id="alive-count">8 ALIVE</div>
+      <div id="storm-warn" class="warn hidden">STORM CLOSING</div>
+    </div>
+    <div class="hud-right">
+      <div class="cubes">
+        <span class="cube-icon">&#9670;</span>
+        <span id="cube-count">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile-ish reload hint -->
+  <div id="reload-hint">RELOADING&hellip;</div>
+</div>
+
+<!-- ============ END SCREEN ============ -->
+<div id="end" class="screen hidden">
+  <h1 id="end-title">VICTORY!</h1>
+  <p id="end-sub">You are the last brawler standing.</p>
+  <div class="end-stats">
+    <div><span id="stat-kills">0</span><label>KILLS</label></div>
+    <div><span id="stat-cubes">0</span><label>POWER CUBES</label></div>
+    <div><span id="stat-time">0s</span><label>SURVIVED</label></div>
+  </div>
+  <button id="again-btn" class="big-btn">PLAY AGAIN</button>
+</div>
+
+<!-- ============ SCRIPTS ============ -->
+<script src="js/brawlers.js"></script>
+<script src="js/input.js"></script>
+<script src="js/world.js"></script>
+<script src="js/entity.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
