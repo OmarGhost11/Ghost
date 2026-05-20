@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  Dimensions,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,75 +10,133 @@ import {
   View,
 } from 'react-native';
 
+// Clips is the home tab — opens first, like TikTok.
 const TABS = [
+  { id: 'clips', label: 'Clips' },
   { id: 'chats', label: 'Chats' },
   { id: 'lfg', label: 'LFG' },
-  { id: 'clips', label: 'Clips' },
   { id: 'indie', label: 'Indie' },
 ];
 
-// Upcoming / recently-released games shown in the top calendar strip.
-// Later this will come from an API; hardcoded for now so the UI is real.
+// Hardcoded for now. Later we swap in real video URLs from Supabase storage.
+const CLIPS = [
+  {
+    id: 'c1',
+    creator: 'CrispAim',
+    handle: '@crispaim',
+    game: 'Valorant',
+    caption: '1v3 ace clutch on Lotus, my hands were shaking',
+    likes: 12400, comments: 312, shares: 88,
+    bg: '#ff4655',
+  },
+  {
+    id: 'c2',
+    creator: 'NovaByte',
+    handle: '@novabyte',
+    game: 'Helldivers 2',
+    caption: 'when the bile titan respects the eagle airstrike',
+    likes: 8900, comments: 204, shares: 41,
+    bg: '#5ab8ff',
+  },
+  {
+    id: 'c3',
+    creator: 'Mike_K',
+    handle: '@mike_k',
+    game: 'Minecraft',
+    caption: 'redstone door but its a whole vault',
+    likes: 23100, comments: 901, shares: 412,
+    bg: '#5ad1a6',
+  },
+  {
+    id: 'c4',
+    creator: 'Sarah99',
+    handle: '@sarah99',
+    game: 'Stardew Valley',
+    caption: 'year 4 farm tour - took me 80 hours',
+    likes: 5400, comments: 188, shares: 22,
+    bg: '#f5c542',
+  },
+  {
+    id: 'c5',
+    creator: 'GhostPxl',
+    handle: '@ghostpxl',
+    game: 'Hollow Knight',
+    caption: 'pure vessel hitless first try (lying)',
+    likes: 17800, comments: 522, shares: 130,
+    bg: '#7c5cff',
+  },
+];
+
 const RELEASES = [
-  { id: 'gta6',     title: 'GTA VI',                   date: 'May 26',  status: 'soon',    accent: '#ff7a59' },
-  { id: 'doom',     title: 'DOOM: The Dark Ages',      date: 'May 15',  status: 'out',     accent: '#d94f4f' },
-  { id: 'fable',    title: 'Fable',                    date: 'Jun 12',  status: 'soon',    accent: '#7c5cff' },
-  { id: 'mh',       title: 'Monster Hunter Wilds',     date: 'Jun 28',  status: 'soon',    accent: '#5ad1a6' },
-  { id: 'borderl',  title: 'Borderlands 4',            date: 'Jul 03',  status: 'soon',    accent: '#f5c542' },
-  { id: 'silksong', title: 'Hollow Knight: Silksong',  date: 'Jul 22',  status: 'soon',    accent: '#5ab8ff' },
+  { id: 'gta6',     title: 'GTA VI',                  date: 'May 26', status: 'soon', accent: '#ff7a59' },
+  { id: 'doom',     title: 'DOOM: The Dark Ages',     date: 'May 15', status: 'out',  accent: '#d94f4f' },
+  { id: 'fable',    title: 'Fable',                   date: 'Jun 12', status: 'soon', accent: '#7c5cff' },
+  { id: 'mh',       title: 'Monster Hunter Wilds',    date: 'Jun 28', status: 'soon', accent: '#5ad1a6' },
+  { id: 'borderl',  title: 'Borderlands 4',           date: 'Jul 03', status: 'soon', accent: '#f5c542' },
+  { id: 'silksong', title: 'Hollow Knight: Silksong', date: 'Jul 22', status: 'soon', accent: '#5ab8ff' },
 ];
 
 const DMS = [
-  { id: 'm1', name: 'Mike_K',     last: 'one more game?',           when: 'now',  unread: 2, color: '#7c5cff' },
-  { id: 'm2', name: 'Sarah99',    last: 'gg that was clean',        when: '2m',   unread: 0, color: '#ff7a59' },
-  { id: 'm3', name: 'CrispAim',   last: 'sent a clip',              when: '14m',  unread: 1, color: '#5ad1a6' },
-  { id: 'm4', name: 'NovaByte',   last: 'down for ranked tonight?', when: '1h',   unread: 0, color: '#f5c542' },
+  { id: 'm1', name: 'Mike_K',   last: 'one more game?',           when: 'now', unread: 2, color: '#7c5cff' },
+  { id: 'm2', name: 'Sarah99',  last: 'gg that was clean',        when: '2m',  unread: 0, color: '#ff7a59' },
+  { id: 'm3', name: 'CrispAim', last: 'sent a clip',              when: '14m', unread: 1, color: '#5ad1a6' },
+  { id: 'm4', name: 'NovaByte', last: 'down for ranked tonight?', when: '1h',  unread: 0, color: '#f5c542' },
 ];
 
 const ROOMS = [
-  { id: 'r1', game: 'Valorant',        members: '2,341 online', tag: 'FPS',     accent: '#ff4655' },
-  { id: 'r2', game: 'Minecraft',       members: '987 online',   tag: 'Sandbox', accent: '#5ad1a6' },
-  { id: 'r3', game: 'Stardew Valley',  members: '412 online',   tag: 'Cozy',    accent: '#f5c542' },
-  { id: 'r4', game: 'Helldivers 2',    members: '1,108 online', tag: 'Co-op',   accent: '#5ab8ff' },
+  { id: 'r1', game: 'Valorant',       members: '2,341 online', tag: 'FPS',     accent: '#ff4655' },
+  { id: 'r2', game: 'Minecraft',      members: '987 online',   tag: 'Sandbox', accent: '#5ad1a6' },
+  { id: 'r3', game: 'Stardew Valley', members: '412 online',   tag: 'Cozy',    accent: '#f5c542' },
+  { id: 'r4', game: 'Helldivers 2',   members: '1,108 online', tag: 'Co-op',   accent: '#5ab8ff' },
 ];
 
 const LFG_POSTS = [
-  { id: 'l1', game: 'Valorant',     title: 'Need 2 for ranked',     detail: '9pm EST · Diamond+ · mic'   },
-  { id: 'l2', game: 'Minecraft',    title: 'Chill survival realm',  detail: 'any time · vanilla 1.21'    },
-  { id: 'l3', game: 'Helldivers 2', title: 'Helldive difficulty',   detail: 'tonight · mic required'     },
-  { id: 'l4', game: 'Marvel Rivals',title: 'Stack of 6 forming',    detail: 'sat 8pm · plat lobby'       },
+  { id: 'l1', game: 'Valorant',      title: 'Need 2 for ranked',    detail: '9pm EST · Diamond+ · mic'  },
+  { id: 'l2', game: 'Minecraft',     title: 'Chill survival realm', detail: 'any time · vanilla 1.21'   },
+  { id: 'l3', game: 'Helldivers 2',  title: 'Helldive difficulty',  detail: 'tonight · mic required'    },
+  { id: 'l4', game: 'Marvel Rivals', title: 'Stack of 6 forming',   detail: 'sat 8pm · plat lobby'      },
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('chats');
+  // Open on Clips so the FYP is the first thing users see.
+  const [activeTab, setActiveTab] = useState('clips');
+
+  // Clips is full-bleed (no header, no calendar) — so the renderer differs.
+  const isClips = activeTab === 'clips';
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <View style={styles.header}>
-        <Text style={styles.logo}>
-          Game<Text style={styles.logoAccent}>Buds</Text>
-        </Text>
-        <Pressable style={styles.searchPill} hitSlop={8}>
-          <Text style={styles.searchText}>Search</Text>
-        </Pressable>
-      </View>
+      {!isClips && (
+        <>
+          <View style={styles.header}>
+            <Text style={styles.logo}>
+              Game<Text style={styles.logoAccent}>Buds</Text>
+            </Text>
+            <Pressable style={styles.searchPill} hitSlop={8}>
+              <Text style={styles.searchText}>Search</Text>
+            </Pressable>
+          </View>
+          <ReleaseCalendar />
+        </>
+      )}
 
-      <ReleaseCalendar />
+      {isClips ? (
+        <ClipsFeed />
+      ) : (
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {activeTab === 'chats' && <ChatsScreen />}
+          {activeTab === 'lfg' && <LfgScreen />}
+          {activeTab === 'indie' && <IndieScreen />}
+        </ScrollView>
+      )}
 
-      <ScrollView
-        style={styles.body}
-        contentContainerStyle={styles.bodyContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {activeTab === 'chats' && <ChatsScreen />}
-        {activeTab === 'lfg' && <LfgScreen />}
-        {activeTab === 'clips' && <ClipsScreen />}
-        {activeTab === 'indie' && <IndieScreen />}
-      </ScrollView>
-
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, isClips && styles.tabBarOnClips]}>
         {TABS.map((tab) => {
           const active = tab.id === activeTab;
           return (
@@ -85,7 +145,13 @@ export default function App() {
               onPress={() => setActiveTab(tab.id)}
               style={styles.tabButton}
             >
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  isClips && styles.tabLabelOnClips,
+                  active && styles.tabLabelActive,
+                ]}
+              >
                 {tab.label}
               </Text>
               <View style={[styles.tabDot, active && styles.tabDotActive]} />
@@ -97,7 +163,131 @@ export default function App() {
   );
 }
 
-// ---- Release calendar (top horizontal strip, Opera-style) ----------------
+// ---- CLIPS FEED — vertical-swipe FYP --------------------------------------
+
+function ClipsFeed() {
+  const [feedTab, setFeedTab] = useState('foryou'); // 'following' | 'foryou'
+  const { height: screenH, width: screenW } = Dimensions.get('window');
+
+  // Each clip takes the full visible area minus the bottom tab bar (~70).
+  const clipHeight = screenH - 70;
+
+  return (
+    <View style={styles.feedRoot}>
+      <FlatList
+        data={CLIPS}
+        keyExtractor={(c) => c.id}
+        pagingEnabled
+        snapToInterval={clipHeight}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <ClipCard clip={item} height={clipHeight} width={screenW} />
+        )}
+      />
+
+      {/* Floating top header: Following | For You */}
+      <View style={styles.feedTopBar} pointerEvents="box-none">
+        <View style={styles.feedTopTabs}>
+          <Pressable onPress={() => setFeedTab('following')}>
+            <Text
+              style={[
+                styles.feedTopLabel,
+                feedTab === 'following' && styles.feedTopLabelActive,
+              ]}
+            >
+              Following
+            </Text>
+          </Pressable>
+          <View style={styles.feedTopSep} />
+          <Pressable onPress={() => setFeedTab('foryou')}>
+            <Text
+              style={[
+                styles.feedTopLabel,
+                feedTab === 'foryou' && styles.feedTopLabelActive,
+              ]}
+            >
+              For You
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ClipCard({ clip, height, width }) {
+  const [liked, setLiked] = useState(false);
+  const [following, setFollowing] = useState(false);
+
+  // Tap-anywhere fallback: ideally this is where video play/pause goes.
+  return (
+    <View style={[styles.clipCard, { height, width, backgroundColor: clip.bg }]}>
+      {/* Subtle vignette so overlay text stays readable */}
+      <View style={styles.clipVignette} pointerEvents="none" />
+
+      {/* Right-side action rail */}
+      <View style={styles.actionRail}>
+        <Pressable
+          onPress={() => setFollowing((v) => !v)}
+          style={styles.creatorAvatarWrap}
+        >
+          <View style={styles.creatorAvatar}>
+            <Text style={styles.creatorAvatarLetter}>{clip.creator[0]}</Text>
+          </View>
+          <View
+            style={[
+              styles.followBadge,
+              following && styles.followBadgeActive,
+            ]}
+          >
+            <Text style={styles.followBadgeText}>
+              {following ? '✓' : '+'}
+            </Text>
+          </View>
+        </Pressable>
+
+        <ActionButton
+          icon={liked ? '♥' : '♡'}
+          color={liked ? '#ff5577' : '#fff'}
+          count={formatCount(clip.likes + (liked ? 1 : 0))}
+          onPress={() => setLiked((v) => !v)}
+        />
+        <ActionButton icon="💬" count={formatCount(clip.comments)} />
+        <ActionButton icon="↗" count={formatCount(clip.shares)} />
+      </View>
+
+      {/* Bottom-left meta overlay */}
+      <View style={styles.clipMeta}>
+        <View style={styles.gameTagRow}>
+          <View style={styles.gameTagDot} />
+          <Text style={styles.gameTagText}>{clip.game}</Text>
+        </View>
+        <Text style={styles.handleText}>{clip.handle}</Text>
+        <Text style={styles.captionText} numberOfLines={2}>
+          {clip.caption}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ActionButton({ icon, count, color = '#fff', onPress }) {
+  return (
+    <Pressable onPress={onPress} style={styles.actionButton} hitSlop={6}>
+      <Text style={[styles.actionIcon, { color }]}>{icon}</Text>
+      {count !== undefined && <Text style={styles.actionCount}>{count}</Text>}
+    </Pressable>
+  );
+}
+
+function formatCount(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace('.0', '') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace('.0', '') + 'K';
+  return String(n);
+}
+
+// ---- Release calendar (top horizontal strip on non-Clips tabs) -----------
 
 function ReleaseCalendar() {
   return (
@@ -114,14 +304,10 @@ function ReleaseCalendar() {
         {RELEASES.map((g) => (
           <View key={g.id} style={styles.releaseCard}>
             <View style={[styles.releaseArt, { backgroundColor: g.accent }]}>
-              <Text style={styles.releaseArtLetter}>
-                {g.title.slice(0, 1)}
-              </Text>
+              <Text style={styles.releaseArtLetter}>{g.title.slice(0, 1)}</Text>
             </View>
             <View style={styles.releaseMeta}>
-              <Text style={styles.releaseTitle} numberOfLines={1}>
-                {g.title}
-              </Text>
+              <Text style={styles.releaseTitle} numberOfLines={1}>{g.title}</Text>
               <View style={styles.releaseDateRow}>
                 <View
                   style={[
@@ -141,12 +327,11 @@ function ReleaseCalendar() {
   );
 }
 
-// ---- Chats: clear split between DMs (people) and Game Rooms (places) -----
+// ---- Chats / LFG / Indie (unchanged structurally) -------------------------
 
 function ChatsScreen() {
   return (
     <View>
-      {/* Direct Messages — person-to-person, circular avatars */}
       <View style={styles.sectionHeader}>
         <View>
           <Text style={styles.sectionEyebrow}>Just you and them</Text>
@@ -179,10 +364,8 @@ function ChatsScreen() {
         ))}
       </View>
 
-      {/* Visual divider so the two sections never blur together */}
       <View style={styles.divider} />
 
-      {/* Game Rooms — place-feel, square art tiles, member counts */}
       <View style={styles.sectionHeader}>
         <View>
           <Text style={styles.sectionEyebrow}>Public lobbies, by game</Text>
@@ -213,8 +396,6 @@ function ChatsScreen() {
   );
 }
 
-// ---- LFG ------------------------------------------------------------------
-
 function LfgScreen() {
   return (
     <View>
@@ -241,45 +422,26 @@ function LfgScreen() {
   );
 }
 
-// ---- Clips & Indie placeholders (real screens come next) -----------------
-
-function ClipsScreen() {
-  return (
-    <Empty
-      eyebrow="Vertical scroll feed"
-      title="Clips"
-      body="Upload short gameplay videos. Vertical swipe like TikTok. Coming up next."
-    />
-  );
-}
-
 function IndieScreen() {
-  return (
-    <Empty
-      eyebrow="Discover & co-buy"
-      title="Indie Corner"
-      body="Find indie games, plan group purchases, meet devs. Built after the social core."
-    />
-  );
-}
-
-function Empty({ eyebrow, title, body }) {
   return (
     <View>
       <View style={styles.sectionHeader}>
         <View>
-          <Text style={styles.sectionEyebrow}>{eyebrow}</Text>
-          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionEyebrow}>Discover & co-buy</Text>
+          <Text style={styles.sectionTitle}>Indie Corner</Text>
         </View>
       </View>
       <View style={styles.emptyCard}>
-        <Text style={styles.emptyBody}>{body}</Text>
+        <Text style={styles.emptyBody}>
+          Find indie games, plan group purchases, meet devs. Built after the social
+          core.
+        </Text>
       </View>
     </View>
   );
 }
 
-// ---- Styles --------------------------------------------------------------
+// ---- Styles ---------------------------------------------------------------
 
 const COLORS = {
   bg:        '#0b0b14',
@@ -295,7 +457,7 @@ const COLORS = {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
-  // Header
+  // Header (hidden on Clips tab)
   header: {
     paddingTop: 64,
     paddingBottom: 14,
@@ -307,12 +469,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  logo: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: COLORS.text,
-    letterSpacing: -0.5,
-  },
+  logo: { fontSize: 26, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
   logoAccent: { color: COLORS.accent },
   searchPill: {
     paddingHorizontal: 14,
@@ -358,19 +515,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   releaseArt: { height: 70, alignItems: 'center', justifyContent: 'center' },
-  releaseArtLetter: {
-    color: '#ffffff',
-    fontSize: 32,
-    fontWeight: '800',
-    opacity: 0.9,
-  },
+  releaseArtLetter: { color: '#fff', fontSize: 32, fontWeight: '800', opacity: 0.9 },
   releaseMeta: { padding: 10 },
   releaseTitle: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   releaseDateRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   releaseStatusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
   releaseDate: { color: COLORS.textDim, fontSize: 12 },
 
-  // Body & section headers
+  // Body & section headers (other tabs)
   body: { flex: 1 },
   bodyContent: { padding: 20, paddingBottom: 40 },
   sectionHeader: {
@@ -397,7 +549,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   sectionActionText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
-
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
@@ -405,19 +556,11 @@ const styles = StyleSheet.create({
     marginHorizontal: -4,
   },
 
-  // DMs (person-feel: rounded avatar, subtle row, no border per row)
-  dmList: { backgroundColor: 'transparent' },
-  dmRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
+  // DMs
+  dmRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
   dmAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
   },
   dmAvatarLetter: { color: '#fff', fontSize: 17, fontWeight: '700' },
   dmBody: { flex: 1, marginLeft: 12, marginRight: 8 },
@@ -426,79 +569,53 @@ const styles = StyleSheet.create({
   dmWhen: { color: COLORS.textFaint, fontSize: 12, marginLeft: 8 },
   dmLast: { color: COLORS.textDim, fontSize: 13, marginTop: 2 },
   dmUnread: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 6,
-    borderRadius: 11,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+    minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11,
+    backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
   },
   dmUnreadText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  // Game Rooms (place-feel: square art tiles, surface card, tag chip)
+  // Game Rooms
   roomList: { gap: 10 },
   roomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface2,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 10,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surface2, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, padding: 10,
   },
   roomArt: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 48, height: 48, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
   roomArtLetter: { color: '#fff', fontSize: 22, fontWeight: '800', opacity: 0.9 },
   roomBody: { flex: 1, marginLeft: 12 },
   roomGame: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   roomMembers: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
   roomTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: COLORS.bg,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: COLORS.bg, borderRadius: 999,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   roomTagText: { color: COLORS.textDim, fontSize: 11, fontWeight: '600' },
 
-  // LFG cards
+  // LFG
   lfgList: { gap: 10 },
   lfgCard: {
     backgroundColor: COLORS.surface2,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   lfgGame: {
-    color: COLORS.accent,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginBottom: 4,
+    color: COLORS.accent, fontSize: 11, fontWeight: '700',
+    letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4,
   },
   lfgTitle: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   lfgDetail: { color: COLORS.textDim, fontSize: 13, marginTop: 4 },
-
-  // Empty
   emptyCard: {
-    backgroundColor: COLORS.surface2,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 18,
+    backgroundColor: COLORS.surface2, borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.border, padding: 18,
   },
   emptyBody: { color: COLORS.textDim, fontSize: 13, lineHeight: 19 },
 
-  // Tab bar (text-only with accent dot under the active label)
+  // Tab bar (transparent overlay on Clips, solid elsewhere)
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
@@ -507,15 +624,117 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 24,
   },
+  tabBarOnClips: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
   tabButton: { flex: 1, alignItems: 'center', paddingVertical: 4 },
   tabLabel: { color: COLORS.textDim, fontSize: 13, fontWeight: '600' },
+  tabLabelOnClips: { color: 'rgba(255,255,255,0.65)' },
   tabLabelActive: { color: COLORS.text },
-  tabDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 6,
-    backgroundColor: 'transparent',
-  },
+  tabDot: { width: 4, height: 4, borderRadius: 2, marginTop: 6, backgroundColor: 'transparent' },
   tabDotActive: { backgroundColor: COLORS.accent },
+
+  // ---- Clips feed ---------------------------------------------------------
+  feedRoot: { flex: 1, backgroundColor: '#000' },
+
+  // Top floating tabs (Following | For You)
+  feedTopBar: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    paddingTop: 56,
+    paddingBottom: 12,
+    alignItems: 'center',
+  },
+  feedTopTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  feedTopLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 16,
+    fontWeight: '600',
+    paddingHorizontal: 10,
+  },
+  feedTopLabelActive: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  feedTopSep: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+
+  // Each clip
+  clipCard: {
+    justifyContent: 'flex-end',
+  },
+  clipVignette: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: '55%',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+
+  // Right action rail
+  actionRail: {
+    position: 'absolute',
+    right: 12,
+    bottom: 120,
+    alignItems: 'center',
+    gap: 22,
+  },
+  creatorAvatarWrap: {
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  creatorAvatar: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: '#1a1a2b',
+    borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  creatorAvatarLetter: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  followBadge: {
+    position: 'absolute',
+    bottom: -8,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#ff5577',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#000',
+  },
+  followBadgeActive: { backgroundColor: '#5ad1a6' },
+  followBadgeText: { color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 14 },
+
+  actionButton: { alignItems: 'center' },
+  actionIcon: { fontSize: 30, color: '#fff' },
+  actionCount: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 2 },
+
+  // Bottom-left meta
+  clipMeta: {
+    paddingHorizontal: 16,
+    paddingBottom: 90, // sits above the tab bar
+    paddingRight: 80,  // leave room for action rail
+  },
+  gameTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 8,
+  },
+  gameTagDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: '#7c5cff',
+    marginRight: 6,
+  },
+  gameTagText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  handleText: { color: '#fff', fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  captionText: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 19 },
 });
