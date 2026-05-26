@@ -1,7 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
@@ -51,8 +50,23 @@ const LFG_POSTS = [
   { id: 'l4', game: 'Marvel Rivals', title: 'Stack of 6 forming', detail: 'sat 8pm · plat lobby' },
 ];
 
-// RAWG API key (free tier, 20k requests/month — plenty for a demo)
-const RAWG_API_KEY = '982ab42ab1f44ef9a5a8e498e3fdbf82';
+// Curated upcoming + recent game releases with real cover art from Steam's
+// public CDN. To swap in live data later (RAWG.io), grab a free API key from
+// https://rawg.io/apidocs and replace this list with a fetch in ReleasesScreen.
+const RELEASES = [
+  { id: 'silksong',     title: 'Hollow Knight: Silksong',          date: 'Mar 14, 2026', status: 'out',  genre: 'Metroidvania', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1030300/library_600x900.jpg', accent: '#5ab8ff' },
+  { id: 'mhwilds',      title: 'Monster Hunter Wilds',             date: 'Feb 28, 2026', status: 'out',  genre: 'Action RPG',   cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900.jpg', accent: '#5ad1a6' },
+  { id: 'doom',         title: 'DOOM: The Dark Ages',              date: 'May 15, 2026', status: 'out',  genre: 'FPS',          cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/3017860/library_600x900.jpg', accent: '#d94f4f' },
+  { id: 'civ7',         title: "Sid Meier's Civilization VII",     date: 'Feb 11, 2026', status: 'out',  genre: 'Strategy',     cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1295660/library_600x900.jpg', accent: '#f5c542' },
+  { id: 'kcd2',         title: 'Kingdom Come: Deliverance II',     date: 'Feb 04, 2026', status: 'out',  genre: 'RPG',          cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1771300/library_600x900.jpg', accent: '#a87f4f' },
+  { id: 'avowed',       title: 'Avowed',                            date: 'Feb 18, 2026', status: 'out',  genre: 'RPG',          cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2457220/library_600x900.jpg', accent: '#7c5cff' },
+  { id: 'indi',         title: 'Indiana Jones and the Great Circle', date: 'Apr 17, 2026', status: 'out', genre: 'Adventure',   cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2677660/library_600x900.jpg', accent: '#c98a3a' },
+  { id: 'nightreign',   title: 'Elden Ring Nightreign',            date: 'May 30, 2026', status: 'soon', genre: 'Action RPG',   cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2622380/library_600x900.jpg', accent: '#9c7d5b' },
+  { id: 'wuchang',      title: 'Wuchang: Fallen Feathers',         date: 'Jul 24, 2026', status: 'soon', genre: 'Soulslike',    cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2277560/library_600x900.jpg', accent: '#5c1a1a' },
+  { id: 'mafia',        title: 'Mafia: The Old Country',           date: 'Aug 08, 2026', status: 'soon', genre: 'Action',       cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2456740/library_600x900.jpg', accent: '#2a2a3a' },
+  { id: 'borderlands4', title: 'Borderlands 4',                    date: 'Sep 23, 2026', status: 'soon', genre: 'Looter Shooter', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1285190/library_600x900.jpg', accent: '#f5c542' },
+  { id: 'poe2',         title: 'Path of Exile 2',                  date: 'Oct 15, 2026', status: 'soon', genre: 'ARPG',         cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2694490/library_600x900.jpg', accent: '#8b3a3a' },
+];
 
 // ---- MAIN APP -------------------------------------------------------------
 
@@ -199,89 +213,67 @@ function formatCount(n) {
 }
 
 
-// ---- RELEASES SCREEN (real game art from RAWG API) -------------------------
+// ---- RELEASES SCREEN (curated list, real cover art) ----------------------
 
 function ReleasesScreen() {
-  const [games, setGames] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchReleases();
-  }, []);
-
-  async function fetchReleases() {
-    try {
-      // Get games releasing in the next 60 days — all platforms, sorted by date
-      const today = new Date();
-      const future = new Date(today);
-      future.setDate(future.getDate() + 60);
-      const from = today.toISOString().split('T')[0];
-      const to = future.toISOString().split('T')[0];
-
-      const url = `https://api.rawg.io/api/games?key=${RAWG_API_KEY}&dates=${from},${to}&ordering=released&page_size=20`;
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.results) {
-        setGames(data.results);
-      }
-    } catch (e) {
-      console.log('RAWG fetch error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingWrap}>
-        <ActivityIndicator size="large" color={COLORS.accent} />
-        <Text style={styles.loadingText}>Loading releases...</Text>
-      </View>
-    );
-  }
+  // Split into "Out now" and "Coming soon" so the page has clear structure.
+  const out = RELEASES.filter((g) => g.status === 'out');
+  const soon = RELEASES.filter((g) => g.status === 'soon');
 
   return (
     <View>
       <View style={styles.sectionHeader}>
         <View>
-          <Text style={styles.sectionEyebrow}>Every game, every day</Text>
-          <Text style={styles.sectionTitle}>Upcoming Releases</Text>
+          <Text style={styles.sectionEyebrow}>Coming soon</Text>
+          <Text style={styles.sectionTitle}>Upcoming</Text>
         </View>
       </View>
+      <ReleaseGrid games={soon} />
 
-      <View style={styles.releasesGrid}>
-        {games.map((game) => (
-          <View key={game.id} style={styles.releaseCardNew}>
-            {game.background_image ? (
-              <Image
-                source={{ uri: game.background_image }}
-                style={styles.releaseArtImg}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={[styles.releaseArtImg, { backgroundColor: COLORS.surface2 }]}>
-                <Text style={styles.releaseArtFallback}>{game.name[0]}</Text>
-              </View>
-            )}
-            <View style={styles.releaseMetaNew}>
-              <Text style={styles.releaseTitleNew} numberOfLines={2}>{game.name}</Text>
-              <Text style={styles.releaseDateNew}>
-                {game.released || 'TBA'}
+      <View style={styles.divider} />
+
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionEyebrow}>Available now</Text>
+          <Text style={styles.sectionTitle}>Just Released</Text>
+        </View>
+      </View>
+      <ReleaseGrid games={out} />
+    </View>
+  );
+}
+
+function ReleaseGrid({ games }) {
+  return (
+    <View style={styles.releasesGrid}>
+      {games.map((game) => (
+        <Pressable key={game.id} style={styles.releaseCardNew}>
+          <View style={[styles.releaseArtFallbackWrap, { backgroundColor: game.accent }]}>
+            <Image
+              source={{ uri: game.cover }}
+              style={styles.releaseArtImg}
+              resizeMode="cover"
+            />
+            <View
+              style={[
+                styles.releaseStatusBadge,
+                game.status === 'out' && styles.releaseStatusBadgeOut,
+              ]}
+            >
+              <Text style={styles.releaseStatusBadgeText}>
+                {game.status === 'out' ? 'OUT' : 'SOON'}
               </Text>
-              {game.genres && game.genres.length > 0 && (
-                <View style={styles.genreRow}>
-                  {game.genres.slice(0, 2).map((g) => (
-                    <View key={g.id} style={styles.genreChip}>
-                      <Text style={styles.genreChipText}>{g.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
             </View>
           </View>
-        ))}
-      </View>
+          <View style={styles.releaseMetaNew}>
+            <Text style={styles.releaseTitleNew} numberOfLines={2}>{game.title}</Text>
+            <Text style={styles.releaseDateNew}>{game.date}</Text>
+            <View style={styles.genreChip}>
+              <Text style={styles.genreChipText}>{game.genre}</Text>
+            </View>
+          </View>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -472,22 +464,56 @@ const styles = StyleSheet.create({
   lfgTitle: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
   lfgDetail: { color: COLORS.textDim, fontSize: 13, marginTop: 4 },
 
-  // Releases tab
-  loadingWrap: { paddingTop: 60, alignItems: 'center' },
-  loadingText: { color: COLORS.textDim, marginTop: 12, fontSize: 14 },
-  releasesGrid: { gap: 14 },
-  releaseCardNew: {
-    backgroundColor: COLORS.surface2, borderRadius: 14,
-    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+  // Releases tab — 2-column poster grid
+  releasesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 16,
   },
-  releaseArtImg: { width: '100%', height: 180 },
-  releaseArtFallback: { color: '#fff', fontSize: 40, fontWeight: '800', opacity: 0.5 },
-  releaseMetaNew: { padding: 14 },
-  releaseTitleNew: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  releaseDateNew: { color: COLORS.textDim, fontSize: 13 },
-  genreRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
-  genreChip: { paddingHorizontal: 10, paddingVertical: 4, backgroundColor: COLORS.bg, borderRadius: 999, borderWidth: 1, borderColor: COLORS.border },
-  genreChipText: { color: COLORS.textDim, fontSize: 11, fontWeight: '600' },
+  releaseCardNew: {
+    width: '48%',
+    backgroundColor: COLORS.surface2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  releaseArtFallbackWrap: {
+    width: '100%',
+    aspectRatio: 2 / 3, // poster aspect ratio
+    position: 'relative',
+  },
+  releaseArtImg: { width: '100%', height: '100%' },
+  releaseStatusBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: COLORS.accent,
+  },
+  releaseStatusBadgeOut: { backgroundColor: '#5ad1a6' },
+  releaseStatusBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  releaseMetaNew: { padding: 10 },
+  releaseTitleNew: { color: COLORS.text, fontSize: 13, fontWeight: '700', marginBottom: 4, lineHeight: 17 },
+  releaseDateNew: { color: COLORS.textDim, fontSize: 11, marginBottom: 8 },
+  genreChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: COLORS.bg,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  genreChipText: { color: COLORS.textDim, fontSize: 10, fontWeight: '600' },
 
   // Tab bar
   tabBar: { flexDirection: 'row', backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 10, paddingBottom: 24 },
