@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
@@ -51,8 +52,7 @@ const LFG_POSTS = [
 ];
 
 // Curated upcoming + recent game releases with real cover art from Steam's
-// public CDN. To swap in live data later (RAWG.io), grab a free API key from
-// https://rawg.io/apidocs and replace this list with a fetch in ReleasesScreen.
+// public CDN. Used as a fallback if the RAWG API is unreachable.
 const RELEASES = [
   { id: 'silksong',     title: 'Hollow Knight: Silksong',          date: 'Mar 14, 2026', status: 'out',  genre: 'Metroidvania', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1030300/library_600x900.jpg', accent: '#5ab8ff' },
   { id: 'mhwilds',      title: 'Monster Hunter Wilds',             date: 'Feb 28, 2026', status: 'out',  genre: 'Action RPG',   cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900.jpg', accent: '#5ad1a6' },
@@ -67,6 +67,41 @@ const RELEASES = [
   { id: 'borderlands4', title: 'Borderlands 4',                    date: 'Sep 23, 2026', status: 'soon', genre: 'Looter Shooter', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1285190/library_600x900.jpg', accent: '#f5c542' },
   { id: 'poe2',         title: 'Path of Exile 2',                  date: 'Oct 15, 2026', status: 'soon', genre: 'ARPG',         cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2694490/library_600x900.jpg', accent: '#8b3a3a' },
 ];
+
+// ---- RAWG API -------------------------------------------------------------
+//
+// Free tier: 20,000 requests/month. Plenty for a demo. If you hit the cap or
+// the key leaks publicly, regenerate it at https://rawg.io/apidocs.
+const RAWG_API_KEY = 'a13d7600387049e1a9ae2fc6122c6d10';
+
+// Format a YYYY-MM-DD date string for RAWG's `dates` parameter.
+function isoDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+// Format a RAWG date ('2026-05-15') into 'May 15, 2026' for display.
+function formatReleaseDate(iso) {
+  if (!iso) return 'TBA';
+  const [y, m, d] = iso.split('-').map(Number);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[m - 1]} ${String(d).padStart(2, '0')}, ${y}`;
+}
+
+// Convert a RAWG game object into the shape our ReleaseGrid expects.
+function rawgToRelease(game, today) {
+  const released = game.released; // YYYY-MM-DD string or null
+  const out = released && released <= today;
+  return {
+    id: String(game.id),
+    title: game.name,
+    date: formatReleaseDate(released),
+    status: out ? 'out' : 'soon',
+    genre: game.genres?.[0]?.name || 'Game',
+    cover: game.background_image || '',
+    accent: '#1a1a2b',
+  };
+}
 
 // ---- MAIN APP -------------------------------------------------------------
 
@@ -213,22 +248,87 @@ function formatCount(n) {
 }
 
 
-// ---- RELEASES SCREEN (curated list, real cover art) ----------------------
+// ---- RELEASES SCREEN (live data from RAWG, falls back to hardcoded) ------
 
 function ReleasesScreen() {
-  // Split into "Out now" and "Coming soon" so the page has clear structure.
-  const out = RELEASES.filter((g) => g.status === 'out');
-  const soon = RELEASES.filter((g) => g.status === 'soon');
+  const [games, setGames] = useState(null); // null = loading, [] = error fallback
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        // Pull games released in a 3-month window: 1 month back to 3 months ahead.
+        // RAWG's `dates` param accepts a comma-separated range.
+        const now = new Date();
+        const past = new Date(now);
+        past.setMonth(past.getMonth() - 1);
+        const future = new Date(now);
+        future.setMonth(future.getMonth() + 3);
+        const todayStr = isoDate(now);
+
+        const url =
+          `https://api.rawg.io/api/games` +
+          `?key=${RAWG_API_KEY}` +
+          `&dates=${isoDate(past)},${isoDate(future)}` +
+          `&ordering=-added` + // most-anticipated/popular first within the window
+          `&page_size=24`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (cancelled) return;
+        const mapped = (data.results || [])
+          .filter((g) => g.background_image) // skip games with no art
+          .map((g) => rawgToRelease(g, todayStr));
+        setGames(mapped);
+      } catch (e) {
+        if (cancelled) return;
+        console.log('RAWG fetch failed, using fallback:', e.message);
+        setError(e.message);
+        setGames(RELEASES); // gracefully fall back so the page is never empty
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (games === null) {
+    return (
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator color={COLORS.accent} />
+        <Text style={styles.loadingText}>Loading releases…</Text>
+      </View>
+    );
+  }
+
+  const out = games.filter((g) => g.status === 'out');
+  const soon = games.filter((g) => g.status === 'soon');
 
   return (
     <View>
+      {error && (
+        <View style={styles.fallbackBanner}>
+          <Text style={styles.fallbackBannerText}>
+            Showing cached releases — live data unavailable
+          </Text>
+        </View>
+      )}
+
       <View style={styles.sectionHeader}>
         <View>
           <Text style={styles.sectionEyebrow}>Coming soon</Text>
           <Text style={styles.sectionTitle}>Upcoming</Text>
         </View>
       </View>
-      <ReleaseGrid games={soon} />
+      {soon.length > 0
+        ? <ReleaseGrid games={soon} />
+        : <Text style={styles.emptyText}>No upcoming games found.</Text>}
 
       <View style={styles.divider} />
 
@@ -238,7 +338,9 @@ function ReleasesScreen() {
           <Text style={styles.sectionTitle}>Just Released</Text>
         </View>
       </View>
-      <ReleaseGrid games={out} />
+      {out.length > 0
+        ? <ReleaseGrid games={out} />
+        : <Text style={styles.emptyText}>No recent releases.</Text>}
     </View>
   );
 }
@@ -465,6 +567,17 @@ const styles = StyleSheet.create({
   lfgDetail: { color: COLORS.textDim, fontSize: 13, marginTop: 4 },
 
   // Releases tab — 2-column poster grid
+  loadingWrap: { paddingTop: 60, alignItems: 'center' },
+  loadingText: { color: COLORS.textDim, marginTop: 12, fontSize: 13 },
+  fallbackBanner: {
+    padding: 10, marginBottom: 14, borderRadius: 10,
+    backgroundColor: COLORS.surface2, borderWidth: 1, borderColor: COLORS.border,
+  },
+  fallbackBannerText: { color: COLORS.textDim, fontSize: 12, textAlign: 'center' },
+  emptyText: {
+    color: COLORS.textDim, fontSize: 13, fontStyle: 'italic',
+    paddingVertical: 8,
+  },
   releasesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
