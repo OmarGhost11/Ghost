@@ -188,6 +188,24 @@ async function cancelNotifications(ids = []) {
   }
 }
 
+// Send a test notification 5 seconds from now. Used for QA only.
+async function sendTestNotification() {
+  const ok = await ensureNotificationPermission();
+  if (!ok) return false;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Test from Game Buds',
+        body: 'If you can read this, notifications work. Wishlist alerts will look like this.',
+      },
+      trigger: { type: 'timeInterval', seconds: 5 },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---- MAIN APP -------------------------------------------------------------
 
 export default function App() {
@@ -445,6 +463,18 @@ function DropsScreen({ wishlist, wishlistReady, onToggleWishlist }) {
           <Text style={styles.sectionEyebrow}>What's launching</Text>
           <Text style={styles.sectionTitle}>Game Drops</Text>
         </View>
+        <Pressable
+          onPress={async () => {
+            const ok = await sendTestNotification();
+            // Quick visual feedback so you know the tap registered.
+            // (We can swap this for a fancy toast later.)
+            console.log(ok ? 'Test notification scheduled (5s)' : 'Notification permission denied');
+          }}
+          style={styles.sectionAction}
+          hitSlop={6}
+        >
+          <Text style={styles.sectionActionText}>Test 🔔</Text>
+        </Pressable>
       </View>
 
       <View style={styles.filterRow}>
