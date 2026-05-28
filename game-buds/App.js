@@ -5,6 +5,8 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +15,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { Video, ResizeMode } from 'expo-av';
 
 // Tabs: Clips (home), Chats, LFG, Drops (renamed from Releases)
 const TABS = [
@@ -87,6 +90,33 @@ function rawgToGame(g) {
     genre: g.genres?.[0]?.name || 'Game',
     cover: g.background_image || '',
   };
+}
+
+// Fetch full details for a single game: description, screenshots, trailers.
+// All three are separate RAWG endpoints; do them in parallel.
+async function fetchGameDetails(gameId) {
+  try {
+    const [detailRes, shotsRes, moviesRes] = await Promise.all([
+      fetch(`https://api.rawg.io/api/games/${gameId}?key=${RAWG_API_KEY}`),
+      fetch(`https://api.rawg.io/api/games/${gameId}/screenshots?key=${RAWG_API_KEY}`),
+      fetch(`https://api.rawg.io/api/games/${gameId}/movies?key=${RAWG_API_KEY}`),
+    ]);
+    const detail = detailRes.ok ? await detailRes.json() : {};
+    const shots = shotsRes.ok ? await shotsRes.json() : { results: [] };
+    const movies = moviesRes.ok ? await moviesRes.json() : { results: [] };
+    return {
+      description: (detail.description_raw || '').trim(),
+      bannerImage: detail.background_image_additional || detail.background_image || '',
+      website: detail.website || '',
+      metacritic: detail.metacritic || null,
+      screenshots: (shots.results || []).map((s) => s.image).filter(Boolean),
+      // Prefer the smaller "480" stream; fall back to "max"
+      trailer: movies.results?.[0]?.data?.['480'] || movies.results?.[0]?.data?.max || null,
+      trailerPreview: movies.results?.[0]?.preview || null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Returns 'out' if released on/before today, otherwise 'soon'.
@@ -397,6 +427,7 @@ function DropsScreen({ wishlist, wishlistReady, onToggleWishlist }) {
   const [games, setGames] = useState(null); // null = loading
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all'); // 'all' | 'wishlist'
+  const [selectedGame, setSelectedGame] = useState(null); // game opened in modal
   const todayStr = isoDate(new Date());
 
   useEffect(() => {
@@ -510,6 +541,7 @@ function DropsScreen({ wishlist, wishlistReady, onToggleWishlist }) {
             wishlist={wishlist}
             wishlistReady={wishlistReady}
             onToggleWishlist={onToggleWishlist}
+            onOpen={setSelectedGame}
             todayStr={todayStr}
           />
         </>
@@ -525,10 +557,20 @@ function DropsScreen({ wishlist, wishlistReady, onToggleWishlist }) {
             wishlist={wishlist}
             wishlistReady={wishlistReady}
             onToggleWishlist={onToggleWishlist}
+            onOpen={setSelectedGame}
             todayStr={todayStr}
           />
         </>
       )}
+
+      {/* Detail modal */}
+      <GameDetailModal
+        game={selectedGame}
+        visible={!!selectedGame}
+        onClose={() => setSelectedGame(null)}
+        inWishlist={!!(selectedGame && wishlist[selectedGame.id])}
+        onToggleWishlist={onToggleWishlist}
+      />
     </View>
   );
 }
@@ -547,7 +589,7 @@ function FilterChip({ label, active, onPress }) {
   );
 }
 
-function DropGrid({ games, wishlist, wishlistReady, onToggleWishlist, todayStr }) {
+function DropGrid({ games, wishlist, wishlistReady, onToggleWishlist, onOpen, todayStr }) {
   return (
     <View style={styles.dropsGrid}>
       {games.map((game) => {
@@ -559,7 +601,11 @@ function DropGrid({ games, wishlist, wishlistReady, onToggleWishlist, todayStr }
           countdown = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days}d`;
         }
         return (
-          <View key={game.id} style={styles.dropCard}>
+          <Pressable
+            key={game.id}
+            style={styles.dropCard}
+            onPress={() => onOpen?.(game)}
+          >
             <View style={styles.dropArtWrap}>
               <Image source={{ uri: game.cover }} style={styles.dropArt} resizeMode="cover" />
               {/* Status badge top-left */}
@@ -591,9 +637,161 @@ function DropGrid({ games, wishlist, wishlistReady, onToggleWishlist, todayStr }
                 <Text style={styles.genreChipText}>{game.genre}</Text>
               </View>
             </View>
-          </View>
+          </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+// ---- GAME DETAIL MODAL (Steam-style: trailer, screenshots, description) -
+
+function GameDetailModal({ game, visible, onClose, inWishlist, onToggleWishlist }) {
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!game) return;
+    setDetails(null);
+    setLoading(true);
+    let cancelled = false;
+    fetchGameDetails(game.id).then((d) => {
+      if (cancelled) return;
+      setDetails(d);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [game?.id]);
+
+  if (!game) return null;
+
+  const screenW = Dimensions.get('window').width;
+  const shotW = Math.min(320, screenW * 0.85);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="pageSheet"
+    >
+      <View style={styles.modalRoot}>
+        {/* Top close bar */}
+        <View style={styles.modalTopBar}>
+          <Pressable onPress={onClose} hitSlop={10} style={styles.modalCloseBtn}>
+            <Text style={styles.modalCloseText}>Close</Text>
+          </Pressable>
+          <Text style={styles.modalTopTitle} numberOfLines={1}>{game.title}</Text>
+          <View style={{ width: 50 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalScroll}>
+          {/* Hero: trailer if available, else banner image */}
+          <View style={styles.heroWrap}>
+            {details?.trailer ? (
+              <Video
+                source={{ uri: details.trailer }}
+                style={styles.heroVideo}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay
+                isLooping
+                isMuted
+                useNativeControls={false}
+              />
+            ) : (
+              <Image
+                source={{ uri: details?.bannerImage || game.cover }}
+                style={styles.heroVideo}
+                resizeMode="cover"
+              />
+            )}
+            <View style={styles.heroVignette} pointerEvents="none" />
+            <View style={styles.heroMeta}>
+              <Text style={styles.heroTitle} numberOfLines={2}>{game.title}</Text>
+              <Text style={styles.heroDate}>{formatReleaseDate(game.released)}</Text>
+            </View>
+          </View>
+
+          {/* Wishlist + external website buttons */}
+          <View style={styles.modalActionsRow}>
+            <Pressable
+              onPress={() => onToggleWishlist(game)}
+              style={[styles.modalWishBtn, inWishlist && styles.modalWishBtnActive]}
+            >
+              <Text style={styles.modalWishBtnText}>
+                {inWishlist ? '✓ On your wishlist' : '+ Add to Wishlist'}
+              </Text>
+            </Pressable>
+            {details?.website ? (
+              <Pressable
+                onPress={() => Linking.openURL(details.website).catch(() => {})}
+                style={styles.modalLinkBtn}
+              >
+                <Text style={styles.modalLinkBtnText}>Website</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Quick stats row */}
+          <View style={styles.statsRow}>
+            <Stat label="Genre" value={game.genre} />
+            {details?.metacritic ? (
+              <Stat label="Metacritic" value={String(details.metacritic)} />
+            ) : null}
+            <Stat
+              label="Status"
+              value={statusFor(game.released, isoDate(new Date())) === 'out' ? 'Out now' : 'Coming soon'}
+            />
+          </View>
+
+          {/* Loading state */}
+          {loading && (
+            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+              <ActivityIndicator color={COLORS.accent} />
+            </View>
+          )}
+
+          {/* Screenshots */}
+          {details?.screenshots?.length > 0 && (
+            <>
+              <Text style={styles.modalSectionTitle}>Screenshots</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.shotsRow}
+              >
+                {details.screenshots.map((src, i) => (
+                  <Image
+                    key={i}
+                    source={{ uri: src }}
+                    style={[styles.shot, { width: shotW, height: shotW * 9 / 16 }]}
+                    resizeMode="cover"
+                  />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* About */}
+          {details?.description ? (
+            <>
+              <Text style={styles.modalSectionTitle}>About</Text>
+              <Text style={styles.modalDescription}>{details.description}</Text>
+            </>
+          ) : null}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <View style={styles.statBox}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
@@ -943,4 +1141,79 @@ const styles = StyleSheet.create({
   gameTagText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   handleText: { color: '#fff', fontSize: 16, fontWeight: '800', marginBottom: 4 },
   captionText: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 19 },
+
+  // Game detail modal (Steam-style)
+  modalRoot: { flex: 1, backgroundColor: COLORS.bg },
+  modalTopBar: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  modalCloseBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  modalCloseText: { color: COLORS.accent, fontSize: 15, fontWeight: '600' },
+  modalTopTitle: { flex: 1, textAlign: 'center', color: COLORS.text, fontSize: 15, fontWeight: '700', marginHorizontal: 8 },
+  modalScroll: { paddingBottom: 24 },
+
+  heroWrap: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#000',
+    position: 'relative',
+  },
+  heroVideo: { width: '100%', height: '100%' },
+  heroVignette: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  heroMeta: { position: 'absolute', left: 16, right: 16, bottom: 12 },
+  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 4 },
+  heroDate: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600' },
+
+  modalActionsRow: {
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  modalWishBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  modalWishBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  modalWishBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  modalLinkBtn: {
+    paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalLinkBtnText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+
+  statsRow: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 18,
+  },
+  statBox: {
+    flex: 1, padding: 10, borderRadius: 10,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  statLabel: {
+    color: COLORS.textFaint, fontSize: 10, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4,
+  },
+  statValue: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+
+  modalSectionTitle: {
+    color: COLORS.text, fontSize: 16, fontWeight: '700',
+    paddingHorizontal: 16, marginTop: 8, marginBottom: 10,
+  },
+  shotsRow: { paddingHorizontal: 16, gap: 10 },
+  shot: { borderRadius: 10, backgroundColor: COLORS.surface2 },
+  modalDescription: {
+    color: COLORS.textDim, fontSize: 14, lineHeight: 21,
+    paddingHorizontal: 16,
+  },
 });
